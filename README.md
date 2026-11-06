@@ -14,6 +14,10 @@ DeepSeek Harness（DSH）Web 界面插件：在输入框（Composer）下方常�
 
 ## 界面预览
 
+点开胶囊查看本会话消费、剩余金额、请求次数与当前时段官方价目（录屏 GIF，余额已打码）：
+
+![用量与计费胶囊操作演示](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/demo.gif)
+
 输入框下方的一枚实时胶囊（在宿主自带的轮次/上下文指标右侧）：
 
 ![输入框下方的用量计费胶囊](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/01-composer.png)

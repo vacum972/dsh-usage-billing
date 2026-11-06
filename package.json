@@ -1,6 +1,6 @@
 {
   "name": "@vacum972/dsh-usage-billing",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DSH Web 用量与计费插件：输入框下方实时显示本会话消费、剩余余额、API 请求次数与 Tokens，并按官方高峰/空闲时段价目逐次请求计价。",
   "type": "module",
   "license": "MIT",

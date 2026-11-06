@@ -16,12 +16,12 @@ DeepSeek Harness（DSH）Web 界面插件：在输入框（Composer）下方常�
 
 输入框下方的一枚实时胶囊（在宿主自带的轮次/上下文指标右侧）：
 
-![输入框下方的用量计费胶囊](assets/screenshots/01-composer.png)
+![输入框下方的用量计费胶囊](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/01-composer.png)
 
 点开后的详情弹窗：消费金额、剩余金额、请求次数、Tokens 总计、平均成本、高峰/空闲时段消费拆分，
 以及当前时段生效的官方价目：
 
-![用量与计费详情弹窗](assets/screenshots/02-dialog.png)
+![用量与计费详情弹窗](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/02-dialog.png)
 
 > 截图为隐私脱敏示意：**金额与余额已打码（马赛克）**，请求次数、Tokens 与官方价目为真实数据。
 

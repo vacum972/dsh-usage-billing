@@ -2,6 +2,8 @@
 
 [![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/vacum972/dsh-usage-billing)
 
+> **非官方社区插件**：本项目由社区成员独立开发和维护，与 DeepSeek 官方无关；第三方内容未经官方审核，使用前请自行评估风险。
+
 DeepSeek Harness（DSH）Web 界面插件：在输入框（Composer）下方常驻一枚**实时用量胶囊**，点开查看本会话的
 消费金额、剩余金额、API 请求次数、Tokens 与**当前时段官方价目**。
 

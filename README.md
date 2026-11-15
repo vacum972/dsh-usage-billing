@@ -46,12 +46,12 @@ dsh plugin --profile web add @vacum972/dsh-usage-billing
 
 ## 界面预览
 
-点开后的详情弹窗：消费金额、剩余金额、请求次数、Tokens 总计、平均成本、高峰/空闲时段消费拆分、
-本会话避开高峰的节省额，以及当前时段生效的官方价目：
+点开后的详情弹窗：消费金额、剩余金额、请求次数、Tokens 总计、平均成本、高峰/空闲时段消费拆分，
+以及当前时段生效的官方价目与空闲倒计时：
 
 ![用量与计费详情弹窗](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/02-dialog.png)
 
-> 截图为隐私脱敏示意：**金额与余额已打码（马赛克）**，请求次数、Tokens 与官方价目为真实数据。
+> 截图为隐私脱敏示意：**金额、余额与时间戳已打码（马赛克）**，请求次数、Tokens 与官方价目为真实数据。
 
 ## 时段与价目（确保准确）
 

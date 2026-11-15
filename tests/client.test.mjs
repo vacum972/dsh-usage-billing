@@ -194,6 +194,7 @@ const sample = Object.freeze({
   outputTokens: 500000,
   totalTokens: 3500000,
   cost: 0.45,
+  savedIdle: 0.1234,
   periodCost: { peak: 0.3, idle: 0.15 },
   currency: 'CNY',
   prices: Object.freeze({
@@ -304,6 +305,16 @@ const idleText = textOf(idleTree);
 for (const expected of ['空闲时段', '5 折', '0.02', '1.00']) {
   assert(idleText.includes(expected), `idle dialog contains ${expected}`);
 }
+
+// Countdown and savings: the two reasons waiting for an idle window is worth it.
+// The pill only carries the countdown on peak; while idle it stays compact and
+// the countdown lives in the dialog badge instead.
+assert(peakText.includes('2h 后空闲'), 'peak pill counts down to the next idle window');
+assert(peakText.includes('少花约 ¥0.1234'), 'dialog shows what peak hours would have cost');
+assert(idleText.includes('剩 12h'), 'idle dialog counts down to the next peak window');
+const idlePillText = textOf(findByProp(idleTree, 'data-composer-stat', 'billing'));
+assert(!idlePillText.includes('剩'), 'idle pill has no countdown');
+assert(!idlePillText.includes('后空闲'), 'idle pill has no idle-in text');
 
 // Signed-out account: the remaining row offers the sign-in hint, and without a
 // link in the account state no Platform link is invented.

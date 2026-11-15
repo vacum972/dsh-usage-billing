@@ -1,31 +1,53 @@
-# 用量与计费（@vacum972/dsh-usage-billing）
+# 会话账单 · dsh-usage-billing
 
 [![Listed on dsh-plugin.org](https://dsh-plugin.org/badges/listed.svg)](https://dsh-plugin.org/plugins/vacum972/dsh-usage-billing) [![dshbase 已收录](https://dshbase.com/badges/vacum972-dsh-usage-billing.svg)](https://dshbase.com/zh/plugins/vacum972-dsh-usage-billing/)
 
 > **非官方社区插件**：本项目由社区成员独立开发和维护，与 DeepSeek 官方无关；第三方内容未经官方审核，使用前请自行评估风险。
 
-DeepSeek Harness（DSH）Web 界面插件：在输入框（Composer）下方常驻一枚**实时用量胶囊**，点开查看本会话的
-消费金额、剩余金额、API 请求次数、Tokens 与**当前时段官方价目**。
+> 输入框下那枚小胶囊，实时告诉你**这一条对话已经花了多少钱**，以及**现在是不是该等一等再跑**。
+
+**同样的请求，空闲时段只要一半。先看见，才省得下来。**
+
+![用量与计费胶囊操作演示](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/demo.gif)
+
+## 三个理由
+
+**1. 按请求时刻计价，不是按平均值估**
+每个请求用它发生那一刻的峰谷价计费，切换时段不重算历史。token 计数与平台同源，**与官方账单实测对照误差约 0.9%**（对照表见文末「与平台『用量信息』的差异」）。
+
+**2. 空闲价 = 高峰价的一半，高峰时胶囊直接倒计时**
+工作日 09:00–12:00、14:00–18:00 之外（含周末、法定节假日）为空闲时段。高峰时胶囊显示「高峰 · 2h 后空闲」；已经空闲时收起倒计时（避免拥挤），改在弹窗的时段徽标里显示「剩 12h」。弹窗还会累计**本会话因避开高峰少花了多少钱**。价目与法定节假日日历运行时自动抓取，失败自动回退上次成功值并提示。
+
+**3. 只看你正在聊的这一条**
+不是「近 30 天总账」，是本会话。胶囊常驻 composer，样式对齐宿主统计控件，不遮挡输入框、不打断上下文。
+
+## 30 秒装上
+
+```bash
+dsh plugin --profile web add @vacum972/dsh-usage-billing
+```
+
+装完刷新页面即可，出厂价目已内置，零配置。Desktop profile 见 [安装](#安装)；不想联网可 `autoRefresh: false` 只用内置价目。
+
+> 金额是**估算值**，不含 Search / Fetch 等按次费用，实际扣费以 DeepSeek 账单为准。
+
+<p align="center"><img src="https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/01-composer.png" width="440" alt="输入框下方的用量计费胶囊"></p>
+
+## 功能
 
 - **按官方峰谷价目逐次请求计价**：每次模型请求按它发生时刻的时段（高峰/空闲）计价，切换时段不重算历史；
 - **价目自动校准**：Host 定期拉取 DeepSeek 官方价目文档，解析模型价格；失败时回退到上次成功价目并在弹窗提示，
   且每 2 分钟自动重试；
 - **法定节假日日历**：自动获取中国法定节假日，高峰/空闲判断与官方规则一致（周末与节假日全天空闲）；
+- **避开高峰的节省统计**：落在空闲时段的结算会同时记录「若在高峰要多花多少」，弹窗累计显示本会话少花的金额；
+- **空闲倒计时**：胶囊直接显示「高峰 · X 后空闲」或「空闲中 · 剩 X」，一眼判断现在跑还是等一等；
 - **剩余金额**：读取当前登录账号的充值余额 + 赠送余额，打开弹窗即刷新、之后每 60 秒更新，可手动重试；
 - **上下文不打扰**：胶囊与弹窗样式对齐宿主 composer 统计控件，紧凑布局，不会遮挡输入框。
 
 ## 界面预览
 
-点开胶囊查看本会话消费、剩余金额、请求次数与当前时段官方价目（录屏 GIF，余额已打码）：
-
-![用量与计费胶囊操作演示](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/demo.gif)
-
-输入框下方的一枚实时胶囊（在宿主自带的轮次/上下文指标右侧）：
-
-![输入框下方的用量计费胶囊](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/01-composer.png)
-
-点开后的详情弹窗：消费金额、剩余金额、请求次数、Tokens 总计、平均成本、高峰/空闲时段消费拆分，
-以及当前时段生效的官方价目：
+点开后的详情弹窗：消费金额、剩余金额、请求次数、Tokens 总计、平均成本、高峰/空闲时段消费拆分、
+本会话避开高峰的节省额，以及当前时段生效的官方价目：
 
 ![用量与计费详情弹窗](https://raw.githubusercontent.com/vacum972/dsh-usage-billing/main/assets/screenshots/02-dialog.png)
 
@@ -156,14 +178,15 @@ dsh plugin --profile desktop add link:<本仓库路径>
 ## 结构
 
 ```
-index.js            Host 半体：usageBilling 会话投影（请求数/token 桶/按请求时刻的时段计价/价目与节假日自动刷新）
-client.js           Client 半体：composer dock 胶囊 + 详情弹窗（剩余金额、当前时段价格）
+index.js            Host 半体：usageBilling 会话投影（请求数/token 桶/按请求时刻的时段计价/高峰反事实节省额/价目与节假日自动刷新）
+client.js           Client 半体：composer dock 胶囊（费用 + 空闲倒计时）+ 详情弹窗（剩余金额、节省额、当前时段价格）
 cordis.patch.yml    bundle 补丁：插入插件行与出厂价目/时段配置
 locale/zh.json     插件管理页标题与描述（中文）
 locale/en.json     同上（英文）
 icon.svg           插件图标
 assets/screenshots 界面截图（金额已打码）
 tests/             单元测试
+CHANGELOG.md       变更日志
 ```
 
 ## License

@@ -24,6 +24,9 @@ window.__ModuleLoader__.load({
     const zh = {
       'pill.requests': '{count} 次',
       'pill.tokens': '{tokens} tok',
+      'pill.peakUntilIdle': '高峰 · {time} 后空闲',
+      'dialog.untilIdle': '{time} 后空闲',
+      'dialog.untilPeak': '剩 {time}',
       'dialog.title': '用量与计费',
       'dialog.subtitle': '本会话累计 · 实时更新',
       'dialog.cost': '消费金额',
@@ -45,6 +48,7 @@ window.__ModuleLoader__.load({
       'dialog.perRequest': '平均每次请求',
       'dialog.peakCost': '高峰时段消费',
       'dialog.idleCost': '空闲时段消费',
+      'dialog.saved': '本会话因避开高峰，少花约 {amount}',
       'dialog.priceTitle': '当前时段价格',
       'dialog.period.peak': '高峰时段',
       'dialog.period.idle': '空闲时段',
@@ -69,6 +73,9 @@ window.__ModuleLoader__.load({
     const en = {
       'pill.requests': '{count} req',
       'pill.tokens': '{tokens} tok',
+      'pill.peakUntilIdle': 'Peak · idle in {time}',
+      'dialog.untilIdle': 'idle in {time}',
+      'dialog.untilPeak': '{time} left',
       'dialog.title': 'Usage & Billing',
       'dialog.subtitle': 'This session · live',
       'dialog.cost': 'Spend',
@@ -90,6 +97,7 @@ window.__ModuleLoader__.load({
       'dialog.perRequest': 'Average per request',
       'dialog.peakCost': 'Peak-period spend',
       'dialog.idleCost': 'Idle-period spend',
+      'dialog.saved': 'About {amount} saved by avoiding peak hours',
       'dialog.priceTitle': 'Current prices',
       'dialog.period.peak': 'Peak period',
       'dialog.period.idle': 'Idle period',
@@ -128,6 +136,7 @@ window.__ModuleLoader__.load({
       '.ub-pill:hover,.ub-pill[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}',
       '.ub-pill svg{flex:none;width:14px;height:14px}',
       '.ub-label{text-overflow:ellipsis;min-width:0;overflow:hidden}',
+      '.ub-hint{color:var(--dsw-alias-label-tertiary);opacity:.85;flex:none;font-variant-numeric:tabular-nums}',
       '.ub-panel{z-index:1100;box-sizing:border-box;border-radius:var(--dsw-radius-lg);background:var(--dsw-specific-menu);width:max-content;min-width:min(320px,100vw - 24px);max-width:min(460px,100vw - 24px);backdrop-filter:var(--dsw-menu-backdrop-filter);--dsw-elevation-stroke-color:var(--dsw-alias-border-l1);box-shadow:var(--dsw-elevation-prominent);color:var(--dsw-alias-label-secondary);cursor:default;border:0;padding:12px;font-size:12px;line-height:16px;position:fixed;max-height:calc(100vh - 96px);overflow-y:auto;overscroll-behavior:contain}',
       '.ub-header{color:var(--dsw-alias-label-primary);justify-content:space-between;align-items:baseline;gap:16px;display:flex;font-weight:500}',
       '.ub-titleLabel{align-items:center;gap:6px;min-width:0;display:inline-flex}',
@@ -315,6 +324,36 @@ window.__ModuleLoader__.load({
       const hours = String(date.getHours()).padStart(2, '0');
       const minutes = String(date.getMinutes()).padStart(2, '0');
       return `${hours}:${minutes}`;
+    };
+
+    /**
+     * The next instant the official period changes, scanning at minute
+     * resolution (the windows themselves are defined in whole minutes).
+     * @param {object|undefined} schedule
+     * @param {number} nowMs
+     * @returns {{ to: 'peak'|'idle', at: number }|null} null when nothing changes within eight days.
+     */
+    const nextTransition = (schedule, nowMs) => {
+      if (schedule === undefined || schedule === null) return null;
+      const current = resolvePeriod(schedule, nowMs);
+      for (let minutes = 1; minutes <= 8 * 24 * 60; minutes += 1) {
+        const at = nowMs + minutes * 60_000;
+        const next = resolvePeriod(schedule, at);
+        if (next !== current) return { to: next, at };
+      }
+      return null;
+    };
+
+    /** Compact countdown such as `1h42m`, `2h`, `18m` or `3d`. */
+    const formatDuration = (ms) => {
+      if (typeof ms !== 'number' || !Number.isFinite(ms) || ms <= 0) return null;
+      const totalMinutes = Math.ceil(ms / 60_000);
+      const days = Math.floor(totalMinutes / (24 * 60));
+      const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+      const minutes = totalMinutes % 60;
+      if (days > 0) return hours > 0 ? `${days}d${hours}h` : `${days}d`;
+      if (hours > 0) return minutes > 0 ? `${hours}h${minutes}m` : `${hours}h`;
+      return `${minutes}m`;
     };
 
     /** Tooltip text for a failed refresh: attempt time plus the failure reason. */
@@ -512,12 +551,11 @@ window.__ModuleLoader__.load({
             };
           }, [open, balanceRefreshTick]);
 
-          // Local clock tick while the dialog is open: the peak/idle period and
-          // prices follow the real clock even when no session event arrives.
+          // Local clock tick: the period and the idle countdown follow the real
+          // clock even when no session event arrives. The dialog ticks faster.
           React.useEffect(() => {
-            if (!open) return undefined;
             setNow(Date.now());
-            const timer = setInterval(() => setNow(Date.now()), PERIOD_REFRESH_MS);
+            const timer = setInterval(() => setNow(Date.now()), open ? PERIOD_REFRESH_MS : 60_000);
             return () => clearInterval(timer);
           }, [open]);
 
@@ -537,6 +575,25 @@ window.__ModuleLoader__.load({
           const ratio = discountRatio(peakPrices, idlePrices);
           const periodLabel = translate(period === 'peak' ? 'dialog.period.peak' : 'dialog.period.idle');
           const periodBadge = flatPrice ? null : period === 'idle' && ratio !== null ? translate('dialog.period.discount', { ratio }) : null;
+
+          // Countdown to the next price change. The pill shows it only while the
+          // clock is on peak, where "wait a bit" is an actionable choice; the
+          // dialog badge keeps it in both directions, where there is room.
+          const transition = flatPrice ? null : nextTransition(data.schedule, now);
+          const remaining = transition === null ? null : formatDuration(transition.at - now);
+          const hint = remaining === null || period !== 'peak' ? null : translate('pill.peakUntilIdle', { time: remaining });
+          const transitionText =
+            remaining === null
+              ? null
+              : period === 'peak'
+                ? translate('dialog.untilIdle', { time: remaining })
+                : translate('dialog.untilPeak', { time: remaining });
+          const periodBadgeText = [periodLabel, periodBadge, transitionText]
+            .filter((part) => part !== null && part !== undefined)
+            .join(' · ');
+          const savedAmount = Number(data.savedIdle);
+          const savedText = Number.isFinite(savedAmount) && savedAmount > 0 ? formatMoney(savedAmount, data.currency) : null;
+          const titleText = hint === null ? label : `${label} · ${hint}`;
           const priceUnit = translate('dialog.unit', { currency: data.currency });
 
           // ---- remaining amount -------------------------------------------------
@@ -681,10 +738,13 @@ window.__ModuleLoader__.load({
             h('div', { className: 'ub-rule', key: 'rule-2' }),
             h('dl', { className: 'ub-details', key: 'usage' }, usageRows),
             periodCostRows.length > 0 ? h('dl', { className: 'ub-details', key: 'period-cost', style: { marginTop: '8px' } }, periodCostRows) : null,
+            savedText === null
+              ? null
+              : h('div', { className: 'ub-note', key: 'saved' }, translate('dialog.saved', { amount: savedText })),
             h('div', { className: 'ub-rule', key: 'rule-3' }),
             h('div', { className: 'ub-section', key: 'price-title' },
               h('span', null, translate('dialog.priceTitle')),
-              h('span', { className: 'ub-badge' }, `${periodLabel}${periodBadge === null ? '' : ` · ${periodBadge}`}`),
+              h('span', { className: 'ub-badge' }, periodBadgeText),
             ),
             h('div', { className: 'ub-unit', key: 'price-unit' }, priceUnit),
             h('dl', { className: 'ub-details', key: 'prices' }, priceRows),
@@ -760,12 +820,13 @@ window.__ModuleLoader__.load({
                   className: 'ub-pill',
                   'aria-haspopup': 'dialog',
                   'aria-expanded': open,
-                  'aria-label': translate('a11y.pill', { label }),
-                  title: label,
+                  'aria-label': translate('a11y.pill', { label: titleText }),
+                  title: titleText,
                   onClick: () => setOpen((value) => !value),
                 },
                 coinIcon(),
                 h('span', { className: 'ub-label' }, label),
+                hint === null ? null : h('span', { className: 'ub-hint' }, `· ${hint}`),
               ),
             ),
             open ? ReactDOM.createPortal(panel, document.body) : null,

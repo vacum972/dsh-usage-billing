@@ -415,6 +415,12 @@ const stateSchema = {
         throw new Error(`usage-billing: invalid ${key} period cost`);
       }
     }
+    // Optional so a state checkpointed before this field existed stays valid.
+    const saved = value.saved ?? { idle: 0 };
+    if (saved === null || typeof saved !== 'object') throw new Error('usage-billing: invalid saved');
+    if (typeof saved.idle !== 'number' || !Number.isFinite(saved.idle) || saved.idle < 0) {
+      throw new Error('usage-billing: invalid saved idle amount');
+    }
     const totals = value.totals ?? {};
     for (const key of ['uncachedInputTokens', 'outputTokens', 'cacheReadTokens', 'cacheWriteTokens']) {
       if (!isCount(totals[key])) throw new Error(`usage-billing: invalid token bucket ${key}`);
@@ -434,6 +440,12 @@ const viewSchema = {
       throw new Error('usage-billing: invalid cost');
     }
     if (typeof value.currency !== 'string') throw new Error('usage-billing: invalid currency');
+    if (
+      value.savedIdle !== undefined &&
+      (typeof value.savedIdle !== 'number' || !Number.isFinite(value.savedIdle) || value.savedIdle < 0)
+    ) {
+      throw new Error('usage-billing: invalid saved idle amount');
+    }
     if (value.prices === null || typeof value.prices !== 'object') {
       throw new Error('usage-billing: invalid price table');
     }
@@ -635,6 +647,7 @@ export function apply(ctx, config) {
       outputTokens: totals.outputTokens,
       totalTokens,
       cost: Math.round(state.cost * 1e8) / 1e8,
+      savedIdle: Math.round((state.saved?.idle ?? 0) * 1e8) / 1e8,
       periodCost: {
         peak: Math.round(state.periodCost.peak * 1e8) / 1e8,
         idle: Math.round(state.periodCost.idle * 1e8) / 1e8,
@@ -682,6 +695,9 @@ export function apply(ctx, config) {
       model: null,
       cost: 0,
       periodCost: { peak: 0, idle: 0 },
+      // Money not spent because a settlement landed in an idle window:
+      // the peak price of the same tokens minus what was actually charged.
+      saved: { idle: 0 },
       totals: zeroBuckets(),
       last: null,
     }),
@@ -722,7 +738,11 @@ export function apply(ctx, config) {
           // Price the sample with the route and official time slot that produced it.
           const period = resolvePricingPeriod(clock, holidays, settings, event.time);
           const contribution = pricedSample(state, buckets, period);
+          // Idle settlements are billed at half price; remember what peak would have cost.
+          const counterfactual = period === 'idle' ? pricedSample(state, buckets, 'peak') : contribution;
+          const savedContribution = period === 'idle' ? Math.max(0, counterfactual - contribution) : 0;
           const previousCost = previous === undefined ? 0 : (previous.cost ?? 0);
+          const previousSaved = previous === undefined ? 0 : (previous.saved ?? 0);
           const previousPeriod = previous === undefined ? null : (previous.period ?? 'idle');
           const periodCost = { ...state.periodCost };
           if (previousPeriod !== null) {
@@ -733,8 +753,9 @@ export function apply(ctx, config) {
             ...next,
             cost: Math.max(0, state.cost - previousCost + contribution),
             periodCost,
+            saved: { idle: Math.max(0, (state.saved?.idle ?? 0) - previousSaved + savedContribution) },
             totals: addReplacing(state.totals, previous?.buckets, buckets),
-            last: { turn, step, buckets, cost: contribution, period },
+            last: { turn, step, buckets, cost: contribution, period, saved: savedContribution },
           };
         }
         default:

@@ -134,6 +134,9 @@ drive({
 });
 equal(state.requests, 3, 'third attempt counted');
 close(state.cost, 0.6178906, 'mixed-period cost total');
+// The fixture prices idle at exactly half of peak, so the avoided peak cost of
+// both idle settlements equals their idle cost.
+close(state.saved.idle, 0.0018906, 'saved tracks the peak price idle settlements avoided');
 
 // --- view ---------------------------------------------------------------
 const view = definition.wire.view(state);
@@ -143,6 +146,7 @@ equal(view.requests, 3, 'view requests');
 equal(view.turns, 1, 'view turns');
 equal(view.totalTokens, 101010 + 400030 + 40 + 50220, 'view total tokens');
 close(view.cost, 0.6178906, 'view cost');
+close(view.savedIdle, 0.0018906, 'view exposes the saved amount');
 close(view.periodCost.peak, 0.616, 'view peak bucket');
 close(view.periodCost.idle, 0.0018906, 'view idle bucket');
 equal(view.prices.peak.cacheMiss, 2, 'view peak prices');
@@ -213,6 +217,24 @@ close(replaced.cost, 4, 'replacement reprices the whole attempt');
 equal(replaced.periodCost.peak, 4, 'replacement keeps one peak contribution');
 equal(replaced.totals.uncachedInputTokens, 2000000, 'replacement replaces token buckets');
 
+// Replacing a settlement replaces its saved amount instead of adding to it.
+const savedDefinition = install(CONFIG);
+let savedState = savedDefinition.init({}, 0);
+savedState = savedDefinition.apply(savedState, { type: 'request/context', data: { provider: 'p', model: 'deepseek-flash' }, time: IDLE_TIME });
+savedState = savedDefinition.apply(savedState, {
+  type: 'assistant/message',
+  data: { turn: 2, step: 1, usage: { inputTokens: 1000000, outputTokens: 0 }, stream: [] },
+  time: IDLE_TIME,
+});
+close(savedState.saved.idle, 1, 'idle settlement records the avoided peak cost');
+savedState = savedDefinition.apply(savedState, {
+  type: 'assistant/message',
+  data: { turn: 2, step: 1, usage: { inputTokens: 2000000, outputTokens: 0 }, stream: [] },
+  time: IDLE_TIME,
+});
+close(savedState.cost, 2, 'replacement reprices the idle settlement');
+close(savedState.saved.idle, 2, 'replacement replaces the saved amount');
+
 // Malformed state is rejected before it can be checkpointed.
 for (const broken of [
   { requests: -1, turns: 0, cost: 0, periodCost: { peak: 0, idle: 0 }, totals: {} },
@@ -226,6 +248,24 @@ for (const broken of [
   }
   assert(rejected, 'state schema rejects invalid state');
 }
+
+const ZERO_TOTALS = { uncachedInputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 };
+
+let badSaved = false;
+try {
+  definition.stateSchema.parse({ requests: 0, turns: 0, cost: 0, periodCost: { peak: 0, idle: 0 }, saved: { idle: -1 }, totals: ZERO_TOTALS });
+} catch {
+  badSaved = true;
+}
+assert(badSaved, 'state schema rejects a negative saved amount');
+
+let legacyState = false;
+try {
+  definition.stateSchema.parse({ requests: 0, turns: 0, cost: 0, periodCost: { peak: 0, idle: 0 }, totals: ZERO_TOTALS });
+} catch {
+  legacyState = true;
+}
+assert(!legacyState, 'state without a saved field stays valid');
 
 console.log('host test: OK');
 console.log(

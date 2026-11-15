@@ -1,6 +1,6 @@
 {
   "name": "@vacum972/dsh-usage-billing",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "DSH Web 会话账单：输入框下方实时显示本会话消费、剩余余额与 Tokens，按官方峰谷价目逐次计价，并显示空闲倒计时与避开高峰省下的金额。",
   "type": "module",
   "license": "MIT",

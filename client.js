@@ -259,20 +259,31 @@ window.__ModuleLoader__.load({
     const WEEKDAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
     /**
+     * One Intl formatter per zone. Constructing a formatter is expensive, and
+     * the transition look-ahead below reads the clock thousands of times.
+     */
+    const CLOCK_FORMATTERS = new Map();
+
+    /**
      * Build a clock reporting the wall time in one IANA time zone.
      * @param {string} timeZone
      */
     const makeClock = (timeZone) => {
-      const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: timeZone || 'Asia/Shanghai',
-        hourCycle: 'h23',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        weekday: 'short',
-      });
+      const tz = timeZone || 'Asia/Shanghai';
+      let formatter = CLOCK_FORMATTERS.get(tz);
+      if (formatter === undefined) {
+        formatter = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          hourCycle: 'h23',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          weekday: 'short',
+        });
+        CLOCK_FORMATTERS.set(tz, formatter);
+      }
       return (ms) => {
         const parts = {};
         for (const part of formatter.formatToParts(new Date(ms))) {
@@ -327,6 +338,13 @@ window.__ModuleLoader__.load({
     };
 
     /**
+     * Last look-ahead result, keyed by schedule shape and wall-clock minute:
+     * the answer cannot change within a minute, so one scan serves every render
+     * in that minute.
+     */
+    const TRANSITION_CACHE = { key: '', value: null };
+
+    /**
      * The next instant the official period changes, scanning at minute
      * resolution (the windows themselves are defined in whole minutes).
      * @param {object|undefined} schedule
@@ -335,13 +353,27 @@ window.__ModuleLoader__.load({
      */
     const nextTransition = (schedule, nowMs) => {
       if (schedule === undefined || schedule === null) return null;
+      const key = [
+        schedule.timeZone || '',
+        Array.isArray(schedule.peakWindows) ? schedule.peakWindows.join('|') : '',
+        Array.isArray(schedule.peakWeekdays) ? schedule.peakWeekdays.join(',') : '',
+        Array.isArray(schedule.holidays) ? schedule.holidays.join(',') : '',
+        Math.floor(nowMs / 60_000),
+      ].join('|');
+      if (TRANSITION_CACHE.key === key) return TRANSITION_CACHE.value;
+      let value = null;
       const current = resolvePeriod(schedule, nowMs);
       for (let minutes = 1; minutes <= 8 * 24 * 60; minutes += 1) {
         const at = nowMs + minutes * 60_000;
         const next = resolvePeriod(schedule, at);
-        if (next !== current) return { to: next, at };
+        if (next !== current) {
+          value = { to: next, at };
+          break;
+        }
       }
-      return null;
+      TRANSITION_CACHE.key = key;
+      TRANSITION_CACHE.value = value;
+      return value;
     };
 
     /** Compact countdown such as `1h42m`, `2h`, `18m` or `3d`. */
@@ -578,8 +610,10 @@ window.__ModuleLoader__.load({
 
           // Countdown to the next price change. The pill shows it only while the
           // clock is on peak, where "wait a bit" is an actionable choice; the
-          // dialog badge keeps it in both directions, where there is room.
-          const transition = flatPrice ? null : nextTransition(data.schedule, now);
+          // dialog badge keeps it in both directions, where there is room. An
+          // idle, closed pill needs neither, so it skips the look-ahead scan.
+          const needsTransition = !flatPrice && (open || period === 'peak');
+          const transition = needsTransition ? nextTransition(data.schedule, now) : null;
           const remaining = transition === null ? null : formatDuration(transition.at - now);
           const hint = remaining === null || period !== 'peak' ? null : translate('pill.peakUntilIdle', { time: remaining });
           const transitionText =

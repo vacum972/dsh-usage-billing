@@ -337,4 +337,47 @@ equal(hiddenTree, null, 'component hides before the first model call');
 const absentTree = render(PEAK_TIME, { data: undefined });
 equal(absentTree, null, 'component hides when the projection is absent');
 
+// The peak/idle look-ahead must stay lazy and cached: Friday night is the worst
+// case, with the next peak ~2.4 days out. Without the fix every render (every
+// keystroke) re-scanned thousands of minutes and rebuilt Intl formatters.
+const realFormatToParts = Intl.DateTimeFormat.prototype.formatToParts;
+let formatToPartsCalls = 0;
+Intl.DateTimeFormat.prototype.formatToParts = function (...args) {
+  formatToPartsCalls += 1;
+  return realFormatToParts.apply(this, args);
+};
+try {
+  const FRIDAY_NIGHT = Date.parse('2026-11-06T15:00:00Z'); // Friday 23:00 Asia/Shanghai
+
+  openInitially = false;
+  formatToPartsCalls = 0;
+  const fridayClosedText = textOf(render(FRIDAY_NIGHT));
+  assert(fridayClosedText.includes('¥0.4500'), 'closed idle pill still renders the cost');
+  assert(
+    formatToPartsCalls <= 2,
+    `closed idle pill skips the look-ahead scan (clock reads: ${formatToPartsCalls})`,
+  );
+
+  openInitially = true;
+  formatToPartsCalls = 0;
+  const fridayOpenText = textOf(render(FRIDAY_NIGHT));
+  assert(fridayOpenText.includes('空闲时段'), 'open idle dialog labels the idle period');
+  assert(fridayOpenText.includes('剩 2d10h'), 'open idle dialog counts down to the next peak');
+  assert(formatToPartsCalls > 10, 'open dialog performs the look-ahead once');
+
+  formatToPartsCalls = 0;
+  textOf(render(FRIDAY_NIGHT));
+  assert(
+    formatToPartsCalls <= 2,
+    `same-minute re-render reuses the cached transition (clock reads: ${formatToPartsCalls})`,
+  );
+
+  // A closed peak pill still shows its countdown: that hint is visible.
+  openInitially = false;
+  const peakHintText = textOf(render(PEAK_TIME));
+  assert(peakHintText.includes('高峰 · 2h 后空闲'), 'closed peak pill shows the idle countdown');
+} finally {
+  Intl.DateTimeFormat.prototype.formatToParts = realFormatToParts;
+}
+
 console.log('client test: OK');
